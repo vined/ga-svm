@@ -21,3 +21,5 @@ cabal.project.local
 
 **/.idea
 **/*.iml
+
+ga-svm
