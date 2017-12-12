@@ -1,0 +1,4 @@
+
+python3 grid.py -svm-train "../svm-train" ../data/bcw-training1.data
+./svm-train -t 2 -c 8 -g 0.001953125 -v 4 data/bcw-training1.data  bcw.model
+./svm-predict data/bcw-testing1.data bcw-training1.data.model bcw-predictions-1.out
