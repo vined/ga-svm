@@ -123,16 +123,46 @@ createRuleFromRanges c ranges featureToggles =
     Rule {cls=c, features=createFeaturesFromRanges ranges featureToggles}
 
 
+-- Common GA utils
+
+getRandomFeature :: Int -> [Feature] -> (Int, Feature, StdGen)
+getRandomFeature seed fts =
+    let g = mkStdGen seed
+        max_i = (length fts) - 1
+        (idx, ng) = randomR (0, max_i) g
+    in (idx, fts !! idx, ng)
+
+
+-- Crossover utils
+
+recombineFeature :: StdGen -> Feature -> Feature -> Feature
+recombineFeature g ft1 ft2 =
+    let (recombineAt, _) = randomR (0, 3) g :: (Int, StdGen)
+    in case recombineAt of
+        0 -> ft2
+        1 -> Feature {range=(Range {from=(from (range ft1)), to=(to (range ft2))}), on=(on ft2)}
+        2 -> Feature {range=(range ft1), on=(on ft2)}
+        3 -> ft1
+
+
+recombineRule :: Int -> Rule -> Rule -> Rule
+recombineRule seed rule1 rule2 =
+    let fts1 = (features rule1)
+        fts2 = (features rule2)
+        (idx, ft1, ng) = getRandomFeature seed fts1
+        newFeature = recombineFeature ng (ft1) (fts2 !! idx)
+        newFeatures = (take idx fts1) ++ [newFeature] ++ (drop (idx + 1) fts2)
+    in Rule {cls=(cls rule1), features=newFeatures}
+
+
 -- Mutation utils
 
 getMaxStep :: Float -> Range -> Double
 getMaxStep stepRate r = ((to r) - (from r)) * (float2Double stepRate)
 
 
-getRandomStep :: Double -> Int -> Double
-getRandomStep maxStepSize seed =
-    let g = mkStdGen seed
-    in fst $ randomR (-maxStepSize, maxStepSize) g
+getRandomStep :: Double -> StdGen -> Double
+getRandomStep maxStepSize g = fst $ randomR (-maxStepSize, maxStepSize) g
 
 
 mutateRange :: Range -> Double -> Bool -> Range
@@ -142,11 +172,11 @@ mutateRange r step isLower =
         else Range {from=(from r), to=((to r) + step)}
 
 
-mutateFeatureValue :: Feature -> Bool -> Float -> Range -> Int -> Feature
-mutateFeatureValue feature isLower stepRate initialRange seed =
+mutateFeatureValue :: Feature -> Bool -> Float -> Range -> StdGen -> Feature
+mutateFeatureValue feature isLower stepRate initialRange g =
     let r = range feature
         maxStepSize = getMaxStep stepRate initialRange
-        step = getRandomStep maxStepSize seed
+        step = getRandomStep maxStepSize g
         newRange = mutateRange r step isLower
     in Feature {range=newRange, on=(on feature)}
 
@@ -156,23 +186,20 @@ toggleFeature feature =
     Feature {range=(range feature), on=(not (on feature))}
 
 
-mutateFeature :: Feature -> Float -> Range -> Int -> Feature
-mutateFeature feature stepRate initialRange seed =
-    let g = mkStdGen seed
-        (mutationType, _) = randomR (0, 2) g :: (Int, System.Random.StdGen)
+mutateFeature :: Feature -> Float -> Range -> StdGen -> Feature
+mutateFeature feature stepRate initialRange g =
+    let (mutationType, ng) = randomR (0, 2) g :: (Int, System.Random.StdGen)
     in case mutationType of
-        0 -> mutateFeatureValue feature True stepRate initialRange seed
-        1 -> mutateFeatureValue feature False stepRate initialRange seed
+        0 -> mutateFeatureValue feature True stepRate initialRange ng
+        1 -> mutateFeatureValue feature False stepRate initialRange ng
         2 -> toggleFeature feature
 
 
 mutateRule :: Rule -> Float -> [Range] -> Int -> Rule
 mutateRule rule stepRate initialRanges seed =
-    let g = mkStdGen seed
-        fts = (features rule)
-        max_i = (length fts) - 1
-        (idx, _) = randomR (0, max_i) g
-        newFeature = mutateFeature (fts !! idx) stepRate (initialRanges !! idx) seed
+    let fts = (features rule)
+        (idx, feature, g) = getRandomFeature seed fts
+        newFeature = mutateFeature (feature) stepRate (initialRanges !! idx) g
         newFeatures = (take idx fts) ++ [newFeature] ++ (drop (idx + 1) fts)
     in Rule {cls=(cls rule), features=newFeatures}
 
@@ -214,13 +241,13 @@ evaluateRule rule sv =
                 then if allTrue
                     then TN
                     else FP
-                else if ruleClass == 1 && not (ruleClass == svClass)
+                else if ruleClass == 1 && svClass == 0
                     then if allTrue
                         then FP
                         else TN
-                    else if allTrue -- ruleClass == 0 && not ruleClass == svClass
+                    else if allTrue -- ruleClass == 0 && svClass == 1
                         then FN
-                        else TP -- TN or TP?
+                        else TP
 
 
 countScore :: Score -> [Score] -> Int
@@ -255,7 +282,7 @@ instance Entity Rule Double [SV] [Range] IO where
 
     -- return crossed entity
     crossover _ _ seed entity1 entity2 =
-        return $ Just  entity1
+        return $ Just $ recombineRule seed entity1 entity2
 
     -- return mutated entity
     mutation initialRanges stepRate seed entity =
@@ -274,59 +301,32 @@ main = do
         dataSetContents <- hGetContents handle
         let svs = readDataSetFileLines $ lines dataSetContents
             initialRanges = getInitialRanges svs
-            rangesForPrinting = rangesToPrettyStrings initialRanges
-
-            testRule = createRuleFromRanges 1 initialRanges [True, False, False, False, False, False, False, False, False]
-            firstSv = head svs
-            firstEval = map (\sv -> evaluateRule testRule sv) svs
-
             seed = 0
             g = mkStdGen seed
             cfg = GAConfig
                     200 -- population size
-                    20 -- archive size (best entities to keep track of)
-                    200 -- maximum number of generations (use 1000)
-                    0.2 -- crossover rate (% of entities by crossover) (from 0.2 to 0.6)
-                    0.5 -- mutation rate (% of entities by mutation) (from 0.01 to 0.1)
+                    10 -- archive size (best entities to keep track of)
+                    100 -- maximum number of generations (use 1000)
+                    0.6 -- crossover rate (% of entities by crossover) (from 0.2 to 0.6)
+                    0.1 -- mutation rate (% of entities by mutation) (from 0.01 to 0.1)
                     0.0 -- parameter passed to crossover (not used)
-                    0.8-- parameter passed to mutation (attribute mutation max step size rate)
+                    0.3-- parameter passed to mutation (attribute mutation max step size rate)
                     False -- whether or not to use check-pointing
                     True -- don't re-score archive in each generation
 
-        putStrLn "Min max values"
-        sequence_ $ map putStrLn rangesForPrinting
-
         -- Do the evolution
         es <- evolveVerbose g cfg initialRanges svs
---         putStrLn $ "Best entity: " ++ (ruleToString $ snd $ head es)
-        putStrLn "-- First 10 entities --"
+
+        putStrLn "--Min max values --"
+        sequence_ $ map putStrLn $ rangesToPrettyStrings initialRanges
+
+        putStrLn "-- Elite --"
         sequence_ $ map putStrLn $ map (\(s, r) -> "Score: " ++ (show s) ++ ", " ++ (ruleToString r)) (take 10 es)
-        putStrLn "-- Last 10 entities --"
-        sequence_ $ map putStrLn $ map (\(s, r) -> "Score: " ++ (show s) ++ ", " ++ (ruleToString r)) (take 10 (reverse es))
-
-
-        putStrLn "-- Testing --"
-        putStrLn $ ruleToString testRule
-
-        putStrLn $ show $ isInRange (head (features testRule)) (head (values firstSv))
-        putStrLn $ show $ isInRange ((features testRule) !! 1) ((values firstSv) !! 1)
-        putStrLn "-- evaluateFeatures --"
-        sequence_ $ map putStrLn $ map show (evaluateFeatures (features testRule) (values firstSv))
-        putStrLn "-- evaluateRule --"
-        putStrLn $ show $ evaluateRule testRule (head svs)
-        sequence_ $ map putStr $ map (\ev -> (show ev) ++ ",") firstEval
-
-        putStrLn "\n"
-
-        putStrLn $ "Result size: " ++ (show $ length es)
 
         putStrLn "-- First entity --"
         putStrLn ("Score: " ++ (show $ fst $ head es) ++ ", " ++ (ruleToString $ snd $ head es))
         putStrLn "-- Last entity --"
         putStrLn ("Score: " ++ (show $ fst $ last es) ++ ", " ++ (ruleToString $ snd $ last es))
-
-        putStrLn $ show $ scoreEntity svs testRule
-
 
         putStrLn "Done.")
 
