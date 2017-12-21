@@ -1,18 +1,12 @@
 # GA-SVM
-SVM rule extraction with GA
+SVM rule extraction with GA.
 
 ## Building and running
 
-Build with
+Build and run demo with:
 ```
-ghc -o ga-svm src/Main.hs
-```
-
-Run with:
-```
-./ga-svm
+run.sh
 ```
 
-## Todo
-- Create chromosome
-- use haskell GA lib
+## Dependencies
+GA library - https://github.com/boegel/GA

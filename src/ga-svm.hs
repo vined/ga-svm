@@ -310,7 +310,7 @@ main = do
                     0.6 -- crossover rate (% of entities by crossover) (from 0.2 to 0.6)
                     0.1 -- mutation rate (% of entities by mutation) (from 0.01 to 0.1)
                     0.0 -- parameter passed to crossover (not used)
-                    0.3-- parameter passed to mutation (attribute mutation max step size rate)
+                    0.3 -- parameter passed to mutation (attribute mutation max step size rate)
                     False -- whether or not to use check-pointing
                     True -- don't re-score archive in each generation
 
@@ -321,12 +321,7 @@ main = do
         sequence_ $ map putStrLn $ rangesToPrettyStrings initialRanges
 
         putStrLn "-- Elite --"
-        sequence_ $ map putStrLn $ map (\(s, r) -> "Score: " ++ (show s) ++ ", " ++ (ruleToString r)) (take 10 es)
-
-        putStrLn "-- First entity --"
-        putStrLn ("Score: " ++ (show $ fst $ head es) ++ ", " ++ (ruleToString $ snd $ head es))
-        putStrLn "-- Last entity --"
-        putStrLn ("Score: " ++ (show $ fst $ last es) ++ ", " ++ (ruleToString $ snd $ last es))
+        sequence_ $ map putStrLn $ map (\(s, r) -> "Score: " ++ (show s) ++ ", " ++ (ruleToString r)) (take 5 es)
 
         putStrLn "Done.")
 
